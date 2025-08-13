@@ -1,7 +1,7 @@
 {
   "name": "tart-commenter",
   "displayName": "Tart Commenter",
-  "description": "Generate {@template} for all file members.",
+  "description": "Generate {@template} for all public module members.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.103.0"
