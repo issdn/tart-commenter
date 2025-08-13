@@ -17,15 +17,16 @@
     "commands": [
       {
         "command": "tartCommenter.generateComments",
-        "title": "Generate Template Documentation",
-        "category": "Dart"
+        "title": "Generate Template Comments",
+        "category": "Tart"
       }
     ],
     "keybindings": [],
     "menus": {
       "commandPalette": [
         {
-          "command": "tartCommenter.generateComments"
+          "command": "tartCommenter.generateComments",
+          "when": "editorHasSelection && editorLangId == dart"
         }
       ]
     }
