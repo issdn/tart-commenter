@@ -1,45 +1,9 @@
-import {
-  ChildProcess,
-  ChildProcessWithoutNullStreams,
-  spawn,
-} from 'child_process';
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import path from 'path';
 import * as vscode from 'vscode';
-import {
-  LanguageClient,
-  LanguageClientOptions,
-  ServerOptions,
-  State,
-} from 'vscode-languageclient/node';
+import { NavigationResponse } from './types';
 
-interface NavigationTarget {
-  kind: string;
-  fileIndex: number;
-  offset: number;
-  length: number;
-  startLine: number;
-  startColumn: number;
-  name: string;
-}
-
-interface NavigationRegion {
-  offset: number;
-  length: number;
-  targets: number[];
-}
-
-interface NavigationResponse {
-  id: string;
-  result?: {
-    files: string[];
-    targets: NavigationTarget[];
-    regions: NavigationRegion[];
-  };
-  error?: {
-    code: string;
-    message: string;
-  };
-}
+const classNames = new Map<string, string>();
 
 let analysisServer: ChildProcessWithoutNullStreams;
 let requestId = 0;
@@ -163,7 +127,14 @@ export function activate(context: vscode.ExtensionContext) {
           const { targets, files } = response.result;
 
           await editor.edit((editBuilder) => {
-            for (const { fileIndex, offset, length, startLine } of targets) {
+            for (const {
+              fileIndex,
+              offset,
+              length,
+              startLine,
+              kind,
+              startColumn,
+            } of targets) {
               const file = files[fileIndex];
               if (!file || file.replaceAll('/', '\\') !== filePath) {
                 continue;
@@ -190,10 +161,21 @@ export function activate(context: vscode.ExtensionContext) {
                   continue;
                 }
                 const position = new vscode.Position(previousLine, 0);
-                editBuilder.insert(
-                  position,
-                  `/// {@template ${toSnakeCase(name)}}\n/// {@endtemplate}\n`
-                );
+                if (kind === 'CONSTRUCTOR') {
+                  const templateName =
+                    classNames.get(name) ?? toSnakeCase(name);
+                  editBuilder.insert(
+                    position,
+                    `/// {@macro ${templateName}}\n`
+                  );
+                } else {
+                  const templateName = toSnakeCase(name);
+                  editBuilder.insert(
+                    position,
+                    `/// {@template ${templateName}}\n/// {@endtemplate}\n`
+                  );
+                  classNames.set(name, templateName);
+                }
               }
             }
           });
