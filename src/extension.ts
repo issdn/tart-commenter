@@ -1,7 +1,8 @@
-import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import { ChildProcessWithoutNullStreams, exec, spawn } from 'child_process';
 import path from 'path';
 import * as vscode from 'vscode';
 import { NavigationResponse } from './types';
+import { homedir } from 'os';
 
 const classNames = new Map<string, string>();
 
@@ -25,6 +26,18 @@ function sendRequest(
   };
 
   analysisServer.stdin.write(JSON.stringify(request) + '\n');
+}
+
+async function getPathFromWhere() {
+  return new Promise<string>((resolve, reject) => {
+    exec('where dart', (err, stdout, stderr) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(stdout.trim().split(/\r?\n/).at(-1)!);
+    });
+  });
 }
 
 function toSnakeCase(str: string): string {
@@ -65,7 +78,7 @@ function getPreviousLine(document: vscode.TextDocument, line: number): number {
   return lastLine + 1;
 }
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   const editor = vscode.window.activeTextEditor;
 
   if (!editor) {
@@ -77,12 +90,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   const channel = vscode.window.createOutputChannel('Tart Commenter');
 
-  // const config = vscode.workspace.getConfiguration('dart');
-  // config.get('sdkPath') as string;
+  const config = vscode.workspace.getConfiguration('dart');
+  const configSdkPathValue = config.get('sdkPath') as string | undefined;
+  let sdkPath = configSdkPathValue
+    ? path.join(configSdkPathValue, 'bin', 'dart.bat')
+    : undefined;
 
-  const dartPath = 'C:/Users/isdn/flutter/bin/dart.bat';
+  sdkPath ??= path.join(homedir(), 'flutter', 'bin', 'dart.bat');
+  sdkPath ??= await getPathFromWhere();
 
-  analysisServer = spawn(dartPath, ['language-server', '--protocol=analyzer'], {
+  analysisServer = spawn(sdkPath, ['language-server', '--protocol=analyzer'], {
     shell: true,
   });
 
