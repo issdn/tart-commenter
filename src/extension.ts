@@ -78,6 +78,57 @@ function getPreviousLine(document: vscode.TextDocument, line: number): number {
   return lastLine + 1;
 }
 
+function insertComment(
+  kind: string,
+  name: string,
+  editBuilder: vscode.TextEditorEdit,
+  position: vscode.Position
+) {
+  if (kind === 'CONSTRUCTOR') {
+    const templateName = classNames.get(name) ?? toSnakeCase(name);
+    editBuilder.insert(position, `/// {@macro ${templateName}}\n`);
+  } else {
+    const templateName = toSnakeCase(name);
+    editBuilder.insert(
+      position,
+      `/// {@template ${templateName}}\n/// {@endtemplate}\n`
+    );
+    classNames.set(name, templateName);
+  }
+}
+
+async function insertCommentForTargets(
+  result: Required<NavigationResponse>['result'],
+  editor: vscode.TextEditor,
+  filePath: string,
+  selectionStartOffset: number,
+  selectedText: string
+) {
+  const { targets, files } = result;
+
+  await editor.edit((editBuilder) => {
+    for (const { fileIndex, offset, length, startLine, kind } of targets) {
+      const file = files[fileIndex];
+      if (!file || file.replaceAll('/', '\\') !== filePath) {
+        continue;
+      }
+      const localOffset = offset - selectionStartOffset;
+      if (localOffset < 0 || localOffset + length > selectedText.length) {
+        continue;
+      }
+      const previousLine = getPreviousLine(editor.document, startLine - 1);
+      const name = selectedText.substring(localOffset, localOffset + length);
+      if (name && !name.startsWith('_')) {
+        if (doesAlreadyHaveTemplateComment(editor.document, previousLine)) {
+          continue;
+        }
+        const position = new vscode.Position(previousLine, 0);
+        insertComment(kind, name, editBuilder, position);
+      }
+    }
+  });
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   const editor = vscode.window.activeTextEditor;
 
@@ -141,61 +192,13 @@ export async function activate(context: vscode.ExtensionContext) {
           response.result.targets &&
           response.result.regions
         ) {
-          const { targets, files } = response.result;
-
-          await editor.edit((editBuilder) => {
-            for (const {
-              fileIndex,
-              offset,
-              length,
-              startLine,
-              kind,
-              startColumn,
-            } of targets) {
-              const file = files[fileIndex];
-              if (!file || file.replaceAll('/', '\\') !== filePath) {
-                continue;
-              }
-              const localOffset = offset - selectionStartOffset;
-              if (
-                localOffset < 0 ||
-                localOffset + length > selectedText.length
-              ) {
-                continue;
-              }
-              const previousLine = getPreviousLine(
-                editor.document,
-                startLine - 1
-              );
-              const name = selectedText.substring(
-                localOffset,
-                localOffset + length
-              );
-              if (name && !name.startsWith('_')) {
-                if (
-                  doesAlreadyHaveTemplateComment(editor.document, previousLine)
-                ) {
-                  continue;
-                }
-                const position = new vscode.Position(previousLine, 0);
-                if (kind === 'CONSTRUCTOR') {
-                  const templateName =
-                    classNames.get(name) ?? toSnakeCase(name);
-                  editBuilder.insert(
-                    position,
-                    `/// {@macro ${templateName}}\n`
-                  );
-                } else {
-                  const templateName = toSnakeCase(name);
-                  editBuilder.insert(
-                    position,
-                    `/// {@template ${templateName}}\n/// {@endtemplate}\n`
-                  );
-                  classNames.set(name, templateName);
-                }
-              }
-            }
-          });
+          await insertCommentForTargets(
+            response.result,
+            editor,
+            filePath,
+            selectionStartOffset,
+            selectedText
+          );
         }
       } catch (e) {
         if (e instanceof Error) {
