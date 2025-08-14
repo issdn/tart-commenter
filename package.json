@@ -4,8 +4,12 @@
   "description": "Generate {@template} for all public module members.",
   "version": "0.0.1",
   "publisher": "isdn",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isdn/tart-commenter.git"
+  },
   "engines": {
-    "vscode": "^1.103.0"
+    "vscode": "^1.102.0"
   },
   "categories": [
     "Other"
