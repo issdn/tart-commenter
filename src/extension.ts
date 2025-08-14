@@ -7,7 +7,6 @@ import { homedir } from 'os';
 const classNames = new Map<string, string>();
 
 let analysisServer: ChildProcessWithoutNullStreams;
-let analysisServerConnected = false;
 let requestId = 0;
 
 let serverConnection: Promise<void>;
@@ -21,7 +20,7 @@ function sendRequest(
     offset?: number;
     length?: number;
   }
-) {
+): Promise<string> {
   const request = {
     id: (++requestId).toString(),
     method: method,
@@ -29,25 +28,7 @@ function sendRequest(
   };
 
   analysisServer.stdin.write(JSON.stringify(request) + '\n');
-}
 
-async function sendRequestWithSpinner(
-  method: string,
-  params: any
-): Promise<any> {
-  if (!analysisServerConnected) {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Tart: Waiting for analysis server to connect...',
-        cancellable: false,
-      },
-      async () => {
-        await serverConnection;
-      }
-    );
-  }
-  sendRequest(method, params);
   return new Promise((resolve) => {
     const handler = (data: Buffer) => {
       analysisServer.stdout?.off('data', handler);
@@ -180,7 +161,6 @@ export async function activate(context: vscode.ExtensionContext) {
     serverConnection = (async () => {
       await new Promise<void>((resolve) => {
         const handler = () => {
-          analysisServerConnected = true;
           resolve();
         };
         analysisServer.stdout?.once('data', handler);
@@ -200,7 +180,6 @@ export async function activate(context: vscode.ExtensionContext) {
       const filePath = editor.document.fileName;
 
       analysisServer.stdout.on('data', async (data) => {
-        analysisServerConnected = true;
         const selectionStartOffset = editor.document.offsetAt(
           editor.selection.start
         );
@@ -239,12 +218,14 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       });
 
-      sendRequest('analysis.setAnalysisRoots', {
+      await serverConnection;
+
+      await sendRequest('analysis.setAnalysisRoots', {
         included: [path.dirname(filePath)],
         excluded: [],
       });
 
-      await sendRequestWithSpinner('analysis.getNavigation', {
+      await sendRequest('analysis.getNavigation', {
         file: filePath,
         offset: 0,
         length: editor.document.getText().length,
