@@ -3,6 +3,7 @@
   "displayName": "Tart Commenter",
   "description": "Generate {@template} for all public module members.",
   "version": "0.0.1",
+  "publisher": "isdn",
   "engines": {
     "vscode": "^1.103.0"
   },

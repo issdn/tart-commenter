@@ -10,6 +10,8 @@ let analysisServer: ChildProcessWithoutNullStreams;
 let analysisServerConnected = false;
 let requestId = 0;
 
+let serverConnection: Promise<void>;
+
 function sendRequest(
   method: string,
   params: {
@@ -41,11 +43,7 @@ async function sendRequestWithSpinner(
         cancellable: false,
       },
       async () => {
-        await new Promise<void>((resolve) => {
-          const handler = () => resolve();
-          analysisServer.stdout?.once('data', handler);
-          analysisServerConnected = true;
-        });
+        await serverConnection;
       }
     );
   }
@@ -161,6 +159,35 @@ async function insertCommentForTargets(
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  if (!analysisServer) {
+    const config = vscode.workspace.getConfiguration('dart');
+    const configSdkPathValue = config.get('sdkPath') as string | undefined;
+    let sdkPath = configSdkPathValue
+      ? path.join(configSdkPathValue, 'bin', 'dart.bat')
+      : undefined;
+
+    sdkPath ??= path.join(homedir(), 'flutter', 'bin', 'dart.bat');
+    sdkPath ??= await getPathFromWhere();
+
+    analysisServer = spawn(
+      sdkPath,
+      ['language-server', '--protocol=analyzer'],
+      {
+        shell: true,
+      }
+    );
+
+    serverConnection = (async () => {
+      await new Promise<void>((resolve) => {
+        const handler = () => {
+          analysisServerConnected = true;
+          resolve();
+        };
+        analysisServer.stdout?.once('data', handler);
+      });
+    })();
+  }
+
   const disposable = vscode.commands.registerCommand(
     'tartCommenter.generateComments',
     async () => {
@@ -172,65 +199,47 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const filePath = editor.document.fileName;
 
-      if (!analysisServer) {
-        const channel = vscode.window.createOutputChannel('Tart Commenter');
-
-        const config = vscode.workspace.getConfiguration('dart');
-        const configSdkPathValue = config.get('sdkPath') as string | undefined;
-        let sdkPath = configSdkPathValue
-          ? path.join(configSdkPathValue, 'bin', 'dart.bat')
-          : undefined;
-
-        sdkPath ??= path.join(homedir(), 'flutter', 'bin', 'dart.bat');
-        sdkPath ??= await getPathFromWhere();
-
-        analysisServer = spawn(
-          sdkPath,
-          ['language-server', '--protocol=analyzer'],
-          {
-            shell: true,
-          }
+      analysisServer.stdout.on('data', async (data) => {
+        analysisServerConnected = true;
+        const selectionStartOffset = editor.document.offsetAt(
+          editor.selection.start
         );
+        const selectedText = editor.document.getText(editor.selection);
 
-        analysisServer.stdout.on('data', async (data) => {
-          const selectionStartOffset = editor.document.offsetAt(
-            editor.selection.start
-          );
-          const selectedText = editor.document.getText(editor.selection);
+        const lines = data
+          .toString()
+          .split('\n')
+          .filter((line: string) => line.trim());
 
-          const lines = data
-            .toString()
-            .split('\n')
-            .filter((line: string) => line.trim());
-
-          for (const line of lines) {
-            try {
-              const response = JSON.parse(line) as NavigationResponse;
-              if (
-                response.id &&
-                response.result &&
-                response.result.targets &&
-                response.result.regions
-              ) {
-                await insertCommentForTargets(
-                  response.result,
-                  editor,
-                  filePath,
-                  selectionStartOffset,
-                  selectedText
-                );
-              }
-            } catch (e) {
-              if (e instanceof Error) {
-                channel.appendLine(e.toString());
-              } else {
-                channel.appendLine('Unknown error occurred');
-              }
+        for (const line of lines) {
+          try {
+            const response = JSON.parse(line) as NavigationResponse;
+            if (
+              response.id &&
+              response.result &&
+              response.result.targets &&
+              response.result.regions
+            ) {
+              await insertCommentForTargets(
+                response.result,
+                editor,
+                filePath,
+                selectionStartOffset,
+                selectedText
+              );
+            }
+          } catch (e) {
+            const channel = vscode.window.createOutputChannel('Tart Commenter');
+            if (e instanceof Error) {
+              channel.appendLine(e.toString());
+            } else {
+              channel.appendLine('Unknown error occurred');
             }
           }
-        });
-      }
-      await sendRequest('analysis.setAnalysisRoots', {
+        }
+      });
+
+      sendRequest('analysis.setAnalysisRoots', {
         included: [path.dirname(filePath)],
         excluded: [],
       });
