@@ -56,36 +56,27 @@ function toSnakeCase(str: string): string {
     .replace(/^_/, '');
 }
 
-function doesAlreadyHaveTemplateComment(
-  document: vscode.TextDocument,
-  line: number
-) {
+function getPreviousLine(document: vscode.TextDocument, line: number) {
+  let containsTemplate = false;
+  let isOverride = false;
   let lastLine = Math.max(0, line - 1);
-  let text = document.lineAt(lastLine).text;
-  while (text.includes('///')) {
-    if (text.includes(`{@template`)) {
-      return true;
-    }
-    lastLine--;
-    if (lastLine < 0) {
-      return false;
-    }
-    text = document.lineAt(lastLine).text;
-  }
-  return false;
-}
 
-function getPreviousLine(document: vscode.TextDocument, line: number): number {
-  let lastLine = Math.max(0, line - 1);
   let text = document.lineAt(lastLine).text;
-  while (text.trimStart().startsWith('@')) {
+  while (/^[@\/]/.test(text.trimStart())) {
+    if (text.includes(`{@template`)) {
+      containsTemplate = true;
+    }
+    if (text.includes(`@override`)) {
+      isOverride = true;
+    }
     if (lastLine === 0) {
-      return lastLine;
+      return { previousLine: 0, containsTemplate, isOverride };
     }
     lastLine--;
     text = document.lineAt(lastLine).text;
   }
-  return lastLine + 1;
+
+  return { previousLine: lastLine + 1, containsTemplate, isOverride };
 }
 
 function insertComment(
@@ -118,6 +109,9 @@ async function insertCommentForTargets(
 
   await editor.edit((editBuilder) => {
     for (const { fileIndex, offset, length, startLine, kind } of targets) {
+      if (kind === 'PARAMETER' || kind === 'LIBRARY') {
+        continue;
+      }
       const file = files[fileIndex];
       if (!file || file.replaceAll('/', '\\') !== filePath) {
         continue;
@@ -126,12 +120,15 @@ async function insertCommentForTargets(
       if (localOffset < 0 || localOffset + length > selectedText.length) {
         continue;
       }
-      const previousLine = getPreviousLine(editor.document, startLine - 1);
+      const { previousLine, containsTemplate, isOverride } = getPreviousLine(
+        editor.document,
+        startLine - 1
+      );
+      if (isOverride || containsTemplate) {
+        continue;
+      }
       const name = selectedText.substring(localOffset, localOffset + length);
       if (name && !name.startsWith('_')) {
-        if (doesAlreadyHaveTemplateComment(editor.document, previousLine)) {
-          continue;
-        }
         const position = new vscode.Position(previousLine, 0);
         insertComment(kind, name, editBuilder, position);
       }
