@@ -14,6 +14,15 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
 
   PublicMemberVisitor(this.lineInfo, this.content);
 
+  Declaration _getFullRegionFromVariableDeclaration(Declaration node) {
+    dynamic parent = node;
+    do {
+      parent = parent.parent;
+    } while (parent is VariableDeclaration ||
+        parent is VariableDeclarationList);
+    return parent as Declaration;
+  }
+
   bool _isPublic(String name) => !name.startsWith('_');
 
   bool _hasTemplate(Comment? comment) {
@@ -160,7 +169,7 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
     for (final variable in node.fields.variables) {
       if (_isPublic(variable.name.lexeme)) {
         _addMember(
-          variable.parent!,
+          _getFullRegionFromVariableDeclaration(variable),
           annotations: node.metadata,
           comment: node.documentationComment,
           name: variable.name.lexeme,
@@ -175,7 +184,7 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
     for (final variable in node.variables.variables) {
       if (_isPublic(variable.name.lexeme)) {
         _addMember(
-          variable.parent!,
+          _getFullRegionFromVariableDeclaration(variable),
           annotations: node.metadata,
           comment: node.documentationComment,
           name: variable.name.lexeme,

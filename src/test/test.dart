@@ -1,5 +1,5 @@
-/// {@template random_class}
-/// {@endtemplate}
+const firstValue = 0;
+
 @deprecated
 class RandomClass {
   @override
@@ -7,17 +7,14 @@ class RandomClass {
   // ignore: override_on_non_overriding_member
   int value;
 
-  /// {@macro random_class}
+  static final int secondValue = 0;
+
   RandomClass(this.value);
 
-  /// {@template double_value}
-  /// {@endtemplate}
   int doubleValue(int value) {
     return value * 2;
   }
 
-  /// {@template is_even}
-  /// {@endtemplate}
   @deprecated
   bool isEven() {
     return value % 2 == 0;

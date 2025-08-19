@@ -1,6 +1,6 @@
 ### Tart Commenter
 
-Automatically generate {@template} comments for all public module members.
+Automatically generate [dart doc](https://pub.dev/packages/dartdoc) {@template} comments for all public module members.
 
 ```dart
 @deprecated
