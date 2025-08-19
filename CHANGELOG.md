@@ -7,3 +7,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 - Initial release
+
+## [0.1.0] - 2025-08-19
+
+### Changed
+
+- Extension no longer spawns and uses dart analysis server to get AST of the dart file. Instead there's a custom .dart script as an exe file that reads it for the open file. 

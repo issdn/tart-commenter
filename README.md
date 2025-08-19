@@ -5,15 +5,18 @@ Automatically generate {@template} comments for all public module members.
 ```dart
 @deprecated
 class RandomClass {
+  @override
   @deprecated
+  // ignore: override_on_non_overriding_member
   int value;
 
   RandomClass(this.value);
 
-  int doubleValue() {
+  int doubleValue(int value) {
     return value * 2;
   }
 
+  @deprecated
   bool isEven() {
     return value % 2 == 0;
   }
@@ -27,22 +30,23 @@ to
 /// {@endtemplate}
 @deprecated
 class RandomClass {
-/// {@template value}
-/// {@endtemplate}
+  @override
   @deprecated
+  // ignore: override_on_non_overriding_member
   int value;
 
-/// {@macro random_class}
+  /// {@macro random_class}
   RandomClass(this.value);
 
-/// {@template double_value}
-/// {@endtemplate}
-  int doubleValue() {
+  /// {@template double_value}
+  /// {@endtemplate}
+  int doubleValue(int value) {
     return value * 2;
   }
 
-/// {@template is_even}
-/// {@endtemplate}
+  /// {@template is_even}
+  /// {@endtemplate}
+  @deprecated
   bool isEven() {
     return value % 2 == 0;
   }

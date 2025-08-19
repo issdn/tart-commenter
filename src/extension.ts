@@ -1,54 +1,7 @@
-import { ChildProcessWithoutNullStreams, exec, spawn } from 'child_process';
-import path from 'path';
+import { execFile } from 'child_process';
 import * as vscode from 'vscode';
-import { NavigationResponse } from './types';
-import { homedir } from 'os';
-
-const classNames = new Map<string, string>();
-
-let analysisServer: ChildProcessWithoutNullStreams;
-let requestId = 0;
-
-let serverConnection: Promise<void>;
-
-function sendRequest(
-  method: string,
-  params: {
-    included?: string[];
-    excluded?: never[];
-    file?: string;
-    offset?: number;
-    length?: number;
-  }
-): Promise<string> {
-  const request = {
-    id: (++requestId).toString(),
-    method: method,
-    params: params,
-  };
-
-  analysisServer.stdin.write(JSON.stringify(request) + '\n');
-
-  return new Promise((resolve) => {
-    const handler = (data: Buffer) => {
-      analysisServer.stdout?.off('data', handler);
-      resolve(data.toString());
-    };
-    analysisServer.stdout?.on('data', handler);
-  });
-}
-
-async function getPathFromWhere() {
-  return new Promise<string>((resolve, reject) => {
-    exec('where dart', (err, stdout, stderr) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(stdout.trim().split(/\r?\n/).at(-1)!);
-    });
-  });
-}
+import type { Declaration } from './types';
+import path from 'path';
 
 function toSnakeCase(str: string): string {
   return str
@@ -56,115 +9,57 @@ function toSnakeCase(str: string): string {
     .replace(/^_/, '');
 }
 
-function getPreviousLine(document: vscode.TextDocument, line: number) {
-  let containsTemplate = false;
-  let isOverride = false;
-  let lastLine = Math.max(0, line - 1);
-
-  let text = document.lineAt(lastLine).text;
-  while (/^[@\/]/.test(text.trimStart())) {
-    if (text.includes(`{@template`)) {
-      containsTemplate = true;
-    }
-    if (text.includes(`@override`)) {
-      isOverride = true;
-    }
-    if (lastLine === 0) {
-      return { previousLine: 0, containsTemplate, isOverride };
-    }
-    lastLine--;
-    text = document.lineAt(lastLine).text;
-  }
-
-  return { previousLine: lastLine + 1, containsTemplate, isOverride };
-}
-
-function insertComment(
-  kind: string,
-  name: string,
-  editBuilder: vscode.TextEditorEdit,
-  position: vscode.Position
-) {
-  if (kind === 'CONSTRUCTOR') {
-    const templateName = classNames.get(name) ?? toSnakeCase(name);
-    editBuilder.insert(position, `/// {@macro ${templateName}}\n`);
-  } else {
-    const templateName = toSnakeCase(name);
-    editBuilder.insert(
-      position,
-      `/// {@template ${templateName}}\n/// {@endtemplate}\n`
-    );
-    classNames.set(name, templateName);
-  }
+function runAnalyzer(exePath: string, filePath: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    execFile(exePath, [filePath], (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(`Analyzer failed: ${stderr || err}`));
+        return;
+      }
+      try {
+        const result = JSON.parse(stdout.toString());
+        resolve(result);
+      } catch (e) {
+        reject(new Error(`Failed to parse analyzer output: ${e}`));
+      }
+    });
+  });
 }
 
 async function insertCommentForTargets(
-  result: Required<NavigationResponse>['result'],
+  declarations: Declaration[],
   editor: vscode.TextEditor,
-  filePath: string,
-  selectionStartOffset: number,
-  selectedText: string
 ) {
-  const { targets, files } = result;
+  const selection = editor.selection;
+  const doc = editor.document;
+
+  const selectionStart = doc.offsetAt(selection.start);
+  const selectionEnd = doc.offsetAt(selection.end);
 
   await editor.edit((editBuilder) => {
-    for (const { fileIndex, offset, length, startLine, kind } of targets) {
-      if (kind === 'PARAMETER' || kind === 'LIBRARY') {
-        continue;
+    for (const { name, shouldMacro, offset } of declarations) {
+      if (selection && !selection.isEmpty) {
+        if (offset < selectionStart || offset > selectionEnd) {
+          continue;
+        }
       }
-      const file = files[fileIndex];
-      if (!file || file.replaceAll('/', '\\') !== filePath) {
-        continue;
-      }
-      const localOffset = offset - selectionStartOffset;
-      if (localOffset < 0 || localOffset + length > selectedText.length) {
-        continue;
-      }
-      const { previousLine, containsTemplate, isOverride } = getPreviousLine(
-        editor.document,
-        startLine - 1
-      );
-      if (isOverride || containsTemplate) {
-        continue;
-      }
-      const name = selectedText.substring(localOffset, localOffset + length);
-      if (name && !name.startsWith('_')) {
-        const position = new vscode.Position(previousLine, 0);
-        insertComment(kind, name, editBuilder, position);
+
+      const templateName = toSnakeCase(name);
+      const position = doc.positionAt(offset);
+      const line = doc.lineAt(position.line);
+      const indent = line.text.match(/^\s*/)?.[0] ?? "";
+
+      if (shouldMacro) {
+        editBuilder.insert(position, `/// {@macro ${templateName}}\n${indent}`);
+
+      } else {
+        editBuilder.insert(position, `/// {@template ${templateName}}\n${indent}/// {@endtemplate}\n${indent}`);
       }
     }
   });
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-  if (!analysisServer) {
-    const config = vscode.workspace.getConfiguration('dart');
-    const configSdkPathValue = config.get('sdkPath') as string | undefined;
-    let sdkPath = configSdkPathValue
-      ? path.join(configSdkPathValue, 'bin', 'dart.bat')
-      : undefined;
-
-    sdkPath ??= path.join(homedir(), 'flutter', 'bin', 'dart.bat');
-    sdkPath ??= await getPathFromWhere();
-
-    analysisServer = spawn(
-      sdkPath,
-      ['language-server', '--protocol=analyzer'],
-      {
-        shell: true,
-      }
-    );
-
-    serverConnection = (async () => {
-      await new Promise<void>((resolve) => {
-        const handler = () => {
-          resolve();
-        };
-        analysisServer.stdout?.once('data', handler);
-      });
-    })();
-  }
-
   const disposable = vscode.commands.registerCommand(
     'tartCommenter.generateComments',
     async () => {
@@ -176,65 +71,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const filePath = editor.document.fileName;
 
-      analysisServer.stdout.on('data', async (data) => {
-        const selectionStartOffset = editor.document.offsetAt(
-          editor.selection.start
-        );
-        const selectedText = editor.document.getText(editor.selection);
+      const exePath = context.asAbsolutePath(
+        path.join("dist", "get_declarations.exe")
+      );
 
-        const lines = data
-          .toString()
-          .split('\n')
-          .filter((line: string) => line.trim());
+      const declarations = await runAnalyzer(exePath, filePath);
 
-        for (const line of lines) {
-          try {
-            const response = JSON.parse(line) as NavigationResponse;
-            if (
-              response.id &&
-              response.result &&
-              response.result.targets &&
-              response.result.regions
-            ) {
-              await insertCommentForTargets(
-                response.result,
-                editor,
-                filePath,
-                selectionStartOffset,
-                selectedText
-              );
-            }
-          } catch (e) {
-            const channel = vscode.window.createOutputChannel('Tart Commenter');
-            if (e instanceof Error) {
-              channel.appendLine(e.toString());
-            } else {
-              channel.appendLine('Unknown error occurred');
-            }
-          }
-        }
-      });
-
-      await serverConnection;
-
-      await sendRequest('analysis.setAnalysisRoots', {
-        included: [path.dirname(filePath)],
-        excluded: [],
-      });
-
-      await sendRequest('analysis.getNavigation', {
-        file: filePath,
-        offset: 0,
-        length: editor.document.getText().length,
-      });
+      insertCommentForTargets(declarations, editor);
     }
   );
 
   context.subscriptions.push(disposable);
 }
 
-export function deactivate() {
-  if (analysisServer) {
-    analysisServer.kill();
-  }
-}
+export function deactivate() { }
