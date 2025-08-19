@@ -6,7 +6,7 @@
   "publisher": "isdn",
   "repository": {
     "type": "git",
-    "url": "https://github.com/isdn/tart-commenter.git"
+    "url": "https://github.com/issdn/tart-commenter.git"
   },
   "icon": "logo.png",
   "engines": {
