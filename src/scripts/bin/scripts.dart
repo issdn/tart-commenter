@@ -19,7 +19,7 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
   bool _hasTemplate(Comment? comment) {
     if (comment == null) return false;
     final text = comment.tokens.map((t) => t.lexeme).join(' ');
-    return text.contains('@template');
+    return text.contains('@template') || text.contains('@macro');
   }
 
   bool _hasOverride(NodeList<Annotation> annotations) {
@@ -160,7 +160,7 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
     for (final variable in node.fields.variables) {
       if (_isPublic(variable.name.lexeme)) {
         _addMember(
-          variable,
+          variable.parent!,
           annotations: node.metadata,
           comment: node.documentationComment,
           name: variable.name.lexeme,
@@ -175,7 +175,7 @@ class PublicMemberVisitor extends RecursiveAstVisitor<void> {
     for (final variable in node.variables.variables) {
       if (_isPublic(variable.name.lexeme)) {
         _addMember(
-          variable,
+          variable.parent!,
           annotations: node.metadata,
           comment: node.documentationComment,
           name: variable.name.lexeme,
