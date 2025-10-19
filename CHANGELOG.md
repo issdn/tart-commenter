@@ -20,3 +20,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - Region of variable declarations now aren't being splitted by comment.
 - Typo in the github link to repo fixed 
+
+## [0.2.0] - 2025-10-19
+
+### Fixed
+
+- Add a command that generates currently open file. 

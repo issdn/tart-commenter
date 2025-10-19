@@ -1,7 +1,51 @@
-import { execFile } from 'child_process';
+import { exec, execFile } from 'child_process';
 import * as vscode from 'vscode';
 import type { Declaration } from './types';
 import path from 'path';
+import fs from 'fs';
+
+function findExecutableOnPath(name: string): string | null {
+  const PATH = process.env.PATH || process.env.Path || '';
+  const isWin = process.platform === 'win32';
+  const pathext = isWin ? process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM' : '';
+  const exts = isWin ? pathext.split(';') : [''];
+  for (const dir of PATH.split(path.delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    for (const ext of exts) {
+      const candidate = path.join(dir, name + (ext || ''));
+      try {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      } catch {
+        // ignore permission errors etc.
+      }
+    }
+  }
+  return null;
+}
+
+function execCommand(
+  dartPath: string,
+  fileParam: string,
+  cwd?: string
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    exec(
+      `${dartPath} run build_runner build "${fileParam}"`,
+      { cwd },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(stderr?.toString() || err.message));
+          return;
+        }
+        resolve({ stdout: stdout.toString(), stderr: stderr.toString() });
+      }
+    );
+  });
+}
 
 function toSnakeCase(str: string): string {
   return str
@@ -28,7 +72,7 @@ function runAnalyzer(exePath: string, filePath: string): Promise<any> {
 
 async function insertCommentForTargets(
   declarations: Declaration[],
-  editor: vscode.TextEditor,
+  editor: vscode.TextEditor
 ) {
   const selection = editor.selection;
   const doc = editor.document;
@@ -47,20 +91,53 @@ async function insertCommentForTargets(
       const templateName = toSnakeCase(name);
       const position = doc.positionAt(offset);
       const line = doc.lineAt(position.line);
-      const indent = line.text.match(/^\s*/)?.[0] ?? "";
+      const indent = line.text.match(/^\s*/)?.[0] ?? '';
 
       if (shouldMacro) {
         editBuilder.insert(position, `/// {@macro ${templateName}}\n${indent}`);
-
       } else {
-        editBuilder.insert(position, `/// {@template ${templateName}}\n${indent}/// {@endtemplate}\n${indent}`);
+        editBuilder.insert(
+          position,
+          `/// {@template ${templateName}}\n${indent}/// {@endtemplate}\n${indent}`
+        );
       }
     }
   });
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand(
+  const dartExec = findExecutableOnPath('dart') ?? 'dart';
+
+  const buildFile = vscode.commands.registerCommand(
+    'tartCommenter.buildCurrentFile',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage('Please open a Dart file');
+        return;
+      }
+
+      try {
+        const filePath = editor.document.fileName;
+        const pathChunks = filePath.split('.');
+        const directoriesPath = pathChunks.shift();
+
+        const pathForDart = `${directoriesPath}*.${pathChunks.join('.')}`;
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(
+          editor.document.uri
+        );
+        const projectRoot =
+          workspaceFolder?.uri.fsPath ?? path.dirname(filePath);
+
+        await execCommand(dartExec, pathForDart, projectRoot);
+        vscode.window.showInformationMessage('Build completed');
+      } catch (error) {
+        vscode.window.showErrorMessage(`Build failed: ${error}`);
+      }
+    }
+  );
+
+  const generateCommands = vscode.commands.registerCommand(
     'tartCommenter.generateComments',
     async () => {
       const editor = vscode.window.activeTextEditor;
@@ -72,7 +149,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const filePath = editor.document.fileName;
 
       const exePath = context.asAbsolutePath(
-        path.join("dist", "get_declarations.exe")
+        path.join('dist', 'get_declarations.exe')
       );
 
       const declarations = await runAnalyzer(exePath, filePath);
@@ -81,7 +158,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(disposable);
+  context.subscriptions.push(generateCommands, buildFile);
 }
 
-export function deactivate() { }
+export function deactivate() {}

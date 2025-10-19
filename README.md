@@ -1,6 +1,8 @@
 ### Tart Commenter
 
-Automatically generate [dart doc](https://pub.dev/packages/dartdoc) {@template} comments for all public module members.
+`tartCommenter.generateComments` - Automatically generate [dart doc](https://pub.dev/packages/dartdoc) {@template} comments for all public module members. Works only on windows currently.
+
+`tartCommenter.buildCurrentFile` - run `dart run build_runner build` on a current file.
 
 ```dart
 @deprecated

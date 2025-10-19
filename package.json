@@ -1,8 +1,8 @@
 {
   "name": "tart-commenter",
   "displayName": "Tart Commenter",
-  "description": "Generate {@template} for all public module members.",
-  "version": "0.1.1",
+  "description": "Collection of QoL tools that I use when writing Dart code.",
+  "version": "0.2.0",
   "publisher": "isdn",
   "repository": {
     "type": "git",
@@ -25,6 +25,11 @@
         "command": "tartCommenter.generateComments",
         "title": "Generate Template Comments",
         "category": "Tart"
+      },
+      {
+        "command": "tartCommenter.buildCurrentFile",
+        "title": "Build Current File",
+        "category": "Tart"
       }
     ],
     "keybindings": [],
@@ -33,6 +38,10 @@
         {
           "command": "tartCommenter.generateComments",
           "when": "editorHasSelection && editorLangId == dart"
+        },
+        {
+          "command": "tartCommenter.buildCurrentFile",
+          "when": "editorLangId == dart"
         }
       ]
     }
