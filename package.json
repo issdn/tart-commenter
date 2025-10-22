@@ -2,7 +2,7 @@
   "name": "tart-commenter",
   "displayName": "Tart Commenter",
   "description": "Collection of QoL tools that I use when writing Dart code.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "isdn",
   "repository": {
     "type": "git",

@@ -23,6 +23,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.2.0] - 2025-10-19
 
-### Fixed
+### Added
 
 - Add a command that generates currently open file. 
+
+## [0.2.1] - 2025-10-22
+
+### Fixed
+
+- Fixed building files with build runner (after testing in production 😜). 

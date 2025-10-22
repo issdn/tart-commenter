@@ -4,6 +4,15 @@ import type { Declaration } from './types';
 import path from 'path';
 import fs from 'fs';
 
+function relativeFromLib(projectRoot: string, absoluteFile: string): string {
+  const rel = path.relative(projectRoot, absoluteFile);
+  const libIndex = rel.indexOf('lib\\');
+  if (libIndex !== -1) {
+    return rel.slice(libIndex);
+  }
+  return rel;
+}
+
 function findExecutableOnPath(name: string): string | null {
   const PATH = process.env.PATH || process.env.Path || '';
   const isWin = process.platform === 'win32';
@@ -34,7 +43,7 @@ function execCommand(
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     exec(
-      `${dartPath} run build_runner build "${fileParam}"`,
+      `${dartPath} run build_runner build --build-filter="${fileParam}" --delete-conflicting-outputs`,
       { cwd },
       (err, stdout, stderr) => {
         if (err) {
@@ -119,18 +128,48 @@ export async function activate(context: vscode.ExtensionContext) {
 
       try {
         const filePath = editor.document.fileName;
-        const pathChunks = filePath.split('.');
-        const directoriesPath = pathChunks.shift();
 
-        const pathForDart = `${directoriesPath}*.${pathChunks.join('.')}`;
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(
           editor.document.uri
         );
         const projectRoot =
           workspaceFolder?.uri.fsPath ?? path.dirname(filePath);
 
-        await execCommand(dartExec, pathForDart, projectRoot);
-        vscode.window.showInformationMessage('Build completed');
+        const relativePath = relativeFromLib(projectRoot, filePath);
+
+        const fileNameChunks = [];
+        const pathChunks = relativePath.split('.');
+        for (let i = pathChunks.length - 1; i >= 0; i--) {
+          fileNameChunks.unshift(pathChunks.pop());
+          if (pathChunks[i - 1].includes('\\')) {
+            break;
+          }
+        }
+
+        const pathForDart = `${pathChunks.join('.')}*.${fileNameChunks.join(
+          '.'
+        )}`;
+
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: 'tart-commenter: running build_runner',
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ message: 'Building...' });
+            const { stderr } = await execCommand(
+              dartExec,
+              pathForDart,
+              projectRoot
+            );
+            if (stderr) {
+              vscode.window.showErrorMessage(`Build failed: ${stderr}`);
+            } else {
+              vscode.window.showInformationMessage('Build completed');
+            }
+          }
+        );
       } catch (error) {
         vscode.window.showErrorMessage(`Build failed: ${error}`);
       }
